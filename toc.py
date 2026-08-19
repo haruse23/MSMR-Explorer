@@ -27,9 +27,6 @@ class TOC():
         zlib_decompressor = zlib.decompressobj()
         self.DecompressedTOC = zlib_decompressor.decompress(self.CompressedTOC)
         
-        with open("file.decompressed", "wb") as out:
-            out.write(self.DecompressedTOC)
-        
     
     def ReadDecompressedTOC(self, f):
         self.MagicDAT1 = f.read(4) # DAT1
