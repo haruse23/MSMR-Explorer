@@ -19,6 +19,14 @@ BASE_DIR = Path(sys.executable).parent
 gui_path = BASE_DIR / "_internal" / "gui.ui"
 hashes_path = BASE_DIR / "_internal" / "hashes.txt"
 
+def resource_path(relative_path):
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
 class TreeWorker(QObject):
     finished = pyqtSignal(dict)
 
@@ -57,7 +65,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        uic.loadUi(gui_path, self)
+        uic.loadUi(resource_path("gui.ui"), self)
         
         # Dark Stylesheet
         self.dark_style = """
@@ -196,7 +204,7 @@ class MainWindow(QMainWindow):
         
         
         self.hashes = {}
-        with open(hashes_path, "r", encoding="utf-8") as r:
+        with open(resource_path("hashes.txt"), "r", encoding="utf-8") as r:
             for line in r:
                 hash_value, filename, num_duplicates = line.strip().split(",", 2)
                 self.hashes[int(hash_value, 16)] = filename
