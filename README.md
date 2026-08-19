@@ -1,6 +1,8 @@
 # MSMR-Explorer
 Game Archive File Explorer for Marvel's Spider-Man: Remastered
 
+[NexusMods Page](https://www.nexusmods.com/marvelsspidermanremastered/mods/6258)
+
 # Compiling to EXE using PyInstaller
 I used this command-line:
 
