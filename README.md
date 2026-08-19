@@ -4,7 +4,9 @@ Game Archive File Explorer for Marvel's Spider-Man: Remastered
 # Compiling to EXE using PyInstaller
 I used this command-line:
 
-`pyinstaller --onedir --icon=msmr_explorer.ico --add-data "gui.ui;." --add-data "redirect_asset.ui;." --add-data "hashes.txt;." --add-data "msmr_explorer.ico;." --exclude-module PySide6 --name "MSMR Explorer" main.py`
+```
+pyinstaller --onedir --icon=msmr_explorer.ico --add-data "gui.ui;." --add-data "redirect_asset.ui;." --add-data "hashes.txt;." --add-data "msmr_explorer.ico;." --exclude-module PySide6 --name "MSMR Explorer" main.py
+```
 
 
 
