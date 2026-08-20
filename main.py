@@ -364,7 +364,8 @@ class MainWindow(QMainWindow):
         with open(archive_path, "rb") as f:
                 self.dsar = DSAR()
                 
-                IsDSAR = (f.read(4) == b"DSAR")
+                IsDSAR = (f.read(4) == b"DSAR") # This advances the file pointer by 4 !
+                f.seek(0) # Seek to beginning again !
                 if IsDSAR:
                     self.dsar.ReadDSARHeader(f)
                     self.dsar.ReadBlockTable(f)
@@ -582,13 +583,14 @@ class MainWindow(QMainWindow):
 
         # New AssetIDs
         NewAssets = []
+        NewAssetsRaw = []
         for i, filepath in enumerate(filepaths):
             basename = BaseNames[i]
             print(basename)
             
             if "/redirect" in basename:
                 continue
-            
+                
             
             ID = crc64.hash(basename)
 
@@ -598,11 +600,20 @@ class MainWindow(QMainWindow):
                 "New": True
             })
             
-            NewAssets.append({
+            if "/raw" in basename:
+                 NewAssetsRaw.append({
                 "ID": ID,
                 "OriginalIndex": i,
                 "New": True
             })
+            
+            else:
+                 NewAssets.append({
+                "ID": ID,
+                "OriginalIndex": i,
+                "New": True
+            })
+           
         
         
         # Spans
@@ -631,8 +642,8 @@ class MainWindow(QMainWindow):
         # Rebuild span indices.
         #
         # The spans stay in the same order.
-        # Their counts stay the same except Span 0,
-        # which receives all new assets
+        # Their counts stay the same except Span 0, 1
+        # which receives all new assets, new raw assets
 
         NewSpans = []
         NewAllIDs = []
@@ -647,12 +658,19 @@ class MainWindow(QMainWindow):
 
             if span_index == 0:
 
-                span_entries = span_entries + NewAssets
+                span_entries = span_entries + NewAssets # Add DAT1 assets like sd textures here in the first even span
 
                 span_entries.sort(
                     key=lambda x: x["ID"]
                 )
-
+                
+            elif span_index == 1:
+                span_entries = span_entries + NewAssetsRaw # Add raw assets like hd textures here in the first odd span
+                
+                span_entries.sort(
+                    key=lambda x: x["ID"]
+                )
+                
             NewAllIDs.extend(span_entries)
             
         
@@ -669,7 +687,11 @@ class MainWindow(QMainWindow):
 
                 # Span 0 received all new assets
                 new_count = old_count + len(NewAssets)
-
+            
+            elif i == 1:
+                # Span 1 received all new raw assets
+                new_count = old_count + len(NewAssetsRaw)
+                
             else:
 
                 # Other spans keep their original count
@@ -952,76 +974,77 @@ class MainWindow(QMainWindow):
         # Ask once which archive contains the redirected assets
         dialog = RedirectAssetDialog()
 
-        if dialog.exec() != QDialog.Accepted:
+        if dialog.exec() == QDialog.Rejected:
             return
-        
-        for file_redirect in filepaths_redirect:
-            print(file_redirect["redirect_filepath"])
             
-            redirect_offset = file_redirect["redirect_offset"]
-            redirect_size = file_redirect["redirect_size"]
-            
-            archive_name_redirect = dialog.ui.archiveNameLineEdit.text().strip()
-            archive_index_redirect = self.toc.ArchivesIndicesByNames[archive_name_redirect]
-            
-            index = self.assetTable.currentIndex()
-        
-            if not index.isValid():
-                return
+        else:
+            for file_redirect in filepaths_redirect:
+                print(file_redirect["redirect_filepath"])
                 
-            asset_name = index.data()
-            asset_name = asset_name.replace("\\", "/")
+                redirect_offset = file_redirect["redirect_offset"]
+                redirect_size = file_redirect["redirect_size"]
+                
+                archive_name_redirect = dialog.ui.archiveNameLineEdit.text().strip()
+                archive_index_redirect = self.toc.ArchivesIndicesByNames[archive_name_redirect]
+                
+                index = self.assetTable.currentIndex()
             
-            wanted_asset_row = index.row()
-            
-            asset_index = self.asset_model.index(wanted_asset_row, 0).data()
-            archive_name_original = self.asset_model.index(wanted_asset_row, 3).data()
-            asset_offset = self.asset_model.index(wanted_asset_row, 4).data()
-            asset_size = self.asset_model.index(wanted_asset_row, 5).data()
-            archive_index_original = self.toc.ArchivesIndicesByNames[archive_name_original]
-
-            # Offsets Section
-            location = int(asset_index) * 8
-            print("Offset location:", location)
-            section_data_bytearray = bytearray(self.toc.Sections[4]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
-            
+                if not index.isValid():
+                    return
                     
-            section_data_bytearray[location: location + 8] = struct.pack("<I", archive_index_redirect) + struct.pack("<I", redirect_offset)
-        
-            
-            self.toc.Sections[4]["SectionData"] = section_data_bytearray
-            
-            # SizeEntries Section
-            location = int(asset_index) * 12
-            print("SizeEntry location:", location)
-            section_data_bytearray = bytearray(self.toc.Sections[2]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
-            
-                    
-            section_data_bytearray[location: location + 12] = struct.pack("<I", 1) + struct.pack("<I", redirect_size) + struct.pack("<I", int(asset_index))
-        
-            
-            self.toc.Sections[2]["SectionData"] = section_data_bytearray
-            
+                asset_name = index.data()
+                asset_name = asset_name.replace("\\", "/")
+                
+                wanted_asset_row = index.row()
+                
+                asset_index = self.asset_model.index(wanted_asset_row, 0).data()
+                archive_name_original = self.asset_model.index(wanted_asset_row, 3).data()
+                asset_offset = self.asset_model.index(wanted_asset_row, 4).data()
+                asset_size = self.asset_model.index(wanted_asset_row, 5).data()
+                archive_index_original = self.toc.ArchivesIndicesByNames[archive_name_original]
 
-            buffer = BytesIO()
-            self.toc.WriteDecompressedTOC(buffer)
-            self.toc.RewriteDecompressedTOC(buffer)
+                # Offsets Section
+                location = int(asset_index) * 8
+                print("Offset location:", location)
+                section_data_bytearray = bytearray(self.toc.Sections[4]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
+                
+                        
+                section_data_bytearray[location: location + 8] = struct.pack("<I", archive_index_redirect) + struct.pack("<I", redirect_offset)
             
-            self.toc.DecompressedTOC = buffer.getvalue()
+                
+                self.toc.Sections[4]["SectionData"] = section_data_bytearray
+                
+                # SizeEntries Section
+                location = int(asset_index) * 12
+                print("SizeEntry location:", location)
+                section_data_bytearray = bytearray(self.toc.Sections[2]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
+                
+                        
+                section_data_bytearray[location: location + 12] = struct.pack("<I", 1) + struct.pack("<I", redirect_size) + struct.pack("<I", int(asset_index))
             
-            self.toc.CompressTOC()
-            
-            ModArchiveAndTOCFolder = r"ModArchiveAndTOC"
-            output_path = os.path.join(os.path.dirname(mod_folder) , ModArchiveAndTOCFolder)
-            
-            os.makedirs(output_path, exist_ok=True)
-            
-            print("About to write TOC")
-            with open(f'{output_path}\\toc', "wb") as out:
-                out.write(b"\xAF\x12\xAF\x77")
-                out.write( struct.pack("<I", len(self.toc.DecompressedTOC)) )
-                out.write(self.toc.CompressedTOC)
-                print("TOC Written")
+                
+                self.toc.Sections[2]["SectionData"] = section_data_bytearray
+                
+
+                buffer = BytesIO()
+                self.toc.WriteDecompressedTOC(buffer)
+                self.toc.RewriteDecompressedTOC(buffer)
+                
+                self.toc.DecompressedTOC = buffer.getvalue()
+                
+                self.toc.CompressTOC()
+                
+                ModArchiveAndTOCFolder = r"ModArchiveAndTOC"
+                output_path = os.path.join(os.path.dirname(mod_folder) , ModArchiveAndTOCFolder)
+                
+                os.makedirs(output_path, exist_ok=True)
+                
+                print("About to write TOC")
+                with open(f'{output_path}\\toc', "wb") as out:
+                    out.write(b"\xAF\x12\xAF\x77")
+                    out.write( struct.pack("<I", len(self.toc.DecompressedTOC)) )
+                    out.write(self.toc.CompressedTOC)
+                    print("TOC Written")
         
         
         
@@ -1030,79 +1053,80 @@ class MainWindow(QMainWindow):
         # Ask once which archive contains the redirected assets
         dialog = RedirectAssetDialog()
 
-        if dialog.exec() != QDialog.Accepted:
+        if dialog.exec() == QDialog.rejected:
             return
         
-        for file_redirect in filepaths_redirect:
-            archive_name_redirect = dialog.ui.archiveNameLineEdit.text().strip()
-            archive_index_redirect = self.toc.ArchivesIndicesByNames[archive_name_redirect]
-            
-            print(file_redirect["redirect_filepath"])
-            
-            redirect_offset = file_redirect["redirect_offset"]
-            redirect_size = file_redirect["redirect_size"]
-            redirect_name = os.path.basename(file_redirect["redirect_filepath"])
-            
-            
-            
-            redirect_name = redirect_name.replace("_", "/").replace("//", "_").replace("\\", "/").replace("/redirect", "")
-            print(redirect_name)
-            
-            
-            wanted_asset_row = None
-            for r in range( self.asset_model.rowCount() ):
-                if redirect_name in self.asset_model.index(r, 2).data() or redirect_name.replace("/", "\\") in self.asset_model.index(r, 2).data():
-                    wanted_asset_row = r
+        else:
+            for file_redirect in filepaths_redirect:
+                archive_name_redirect = dialog.ui.archiveNameLineEdit.text().strip()
+                archive_index_redirect = self.toc.ArchivesIndicesByNames[archive_name_redirect]
+                
+                print(file_redirect["redirect_filepath"])
+                
+                redirect_offset = file_redirect["redirect_offset"]
+                redirect_size = file_redirect["redirect_size"]
+                redirect_name = os.path.basename(file_redirect["redirect_filepath"])
+                
+                
+                
+                redirect_name = redirect_name.replace("_", "/").replace("//", "_").replace("\\", "/").replace("/redirect", "")
+                print(redirect_name)
+                
+                
+                wanted_asset_row = None
+                for r in range( self.asset_model.rowCount() ):
+                    if redirect_name in self.asset_model.index(r, 2).data() or redirect_name.replace("/", "\\") in self.asset_model.index(r, 2).data():
+                        wanted_asset_row = r
 
 
-            asset_index = self.asset_model.index(wanted_asset_row, 0).data()
-            archive_name_original = self.asset_model.index(wanted_asset_row, 3).data()
-            asset_offset = self.asset_model.index(wanted_asset_row, 4).data()
-            asset_size = self.asset_model.index(wanted_asset_row, 5).data()
-            archive_index_original = self.toc.ArchivesIndicesByNames[archive_name_original]
+                asset_index = self.asset_model.index(wanted_asset_row, 0).data()
+                archive_name_original = self.asset_model.index(wanted_asset_row, 3).data()
+                asset_offset = self.asset_model.index(wanted_asset_row, 4).data()
+                asset_size = self.asset_model.index(wanted_asset_row, 5).data()
+                archive_index_original = self.toc.ArchivesIndicesByNames[archive_name_original]
 
-            # Offsets Section
-            location = int(asset_index) * 8
-            print("Offset location:", location)
-            section_data_bytearray = bytearray(self.toc.Sections[4]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
+                # Offsets Section
+                location = int(asset_index) * 8
+                print("Offset location:", location)
+                section_data_bytearray = bytearray(self.toc.Sections[4]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
+                
+                        
+                section_data_bytearray[location: location + 8] = struct.pack("<I", archive_index_redirect) + struct.pack("<I", redirect_offset)
             
-                    
-            section_data_bytearray[location: location + 8] = struct.pack("<I", archive_index_redirect) + struct.pack("<I", redirect_offset)
-        
+                
+                self.toc.Sections[4]["SectionData"] = section_data_bytearray
+                
+                # SizeEntries Section
+                location = int(asset_index) * 12
+                print("SizeEntry location:", location)
+                section_data_bytearray = bytearray(self.toc.Sections[2]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
+                
+                        
+                section_data_bytearray[location: location + 12] = struct.pack("<I", 1) + struct.pack("<I", redirect_size) + struct.pack("<I", int(asset_index))
             
-            self.toc.Sections[4]["SectionData"] = section_data_bytearray
-            
-            # SizeEntries Section
-            location = int(asset_index) * 12
-            print("SizeEntry location:", location)
-            section_data_bytearray = bytearray(self.toc.Sections[2]["SectionData"]) # Bytearray cause it is mutable (could be modified in place) unlike Bytes
-            
-                    
-            section_data_bytearray[location: location + 12] = struct.pack("<I", 1) + struct.pack("<I", redirect_size) + struct.pack("<I", int(asset_index))
-        
-            
-            self.toc.Sections[2]["SectionData"] = section_data_bytearray
-            
+                
+                self.toc.Sections[2]["SectionData"] = section_data_bytearray
+                
 
-            buffer = BytesIO()
-            self.toc.WriteDecompressedTOC(buffer)
-            self.toc.RewriteDecompressedTOC(buffer)
-            
-            self.toc.DecompressedTOC = buffer.getvalue()
-            
-            self.toc.CompressTOC()
-            
-            ModArchiveAndTOCFolder = r"ModArchiveAndTOC"
-            output_path = os.path.join(os.path.dirname(mod_folder) , ModArchiveAndTOCFolder)
-            
-            os.makedirs(output_path, exist_ok=True)
-            
-            print("About to write TOC")
-            with open(f'{output_path}\\toc', "wb") as out:
-                out.write(b"\xAF\x12\xAF\x77")
-                out.write( struct.pack("<I", len(self.toc.DecompressedTOC)) )
-                out.write(self.toc.CompressedTOC)
-                print("TOC Written")
+                buffer = BytesIO()
+                self.toc.WriteDecompressedTOC(buffer)
+                self.toc.RewriteDecompressedTOC(buffer)
+                
+                self.toc.DecompressedTOC = buffer.getvalue()
+                
+                self.toc.CompressTOC()
+                
+                ModArchiveAndTOCFolder = r"ModArchiveAndTOC"
+                output_path = os.path.join(os.path.dirname(mod_folder) , ModArchiveAndTOCFolder)
+                
+                os.makedirs(output_path, exist_ok=True)
+                
+                print("About to write TOC")
+                with open(f'{output_path}\\toc', "wb") as out:
+                    out.write(b"\xAF\x12\xAF\x77")
+                    out.write( struct.pack("<I", len(self.toc.DecompressedTOC)) )
+                    out.write(self.toc.CompressedTOC)
+                    print("TOC Written")
                 
                 
 
