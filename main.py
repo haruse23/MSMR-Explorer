@@ -601,14 +601,17 @@ class MainWindow(QMainWindow):
             })
             
             if "/raw" in basename:
-                 NewAssetsRaw.append({
+                basename = basename.replace("/raw", "")
+                ID = crc64.hash(basename)
+                
+                NewAssetsRaw.append({
                 "ID": ID,
                 "OriginalIndex": i,
                 "New": True
             })
             
             else:
-                 NewAssets.append({
+                NewAssets.append({
                 "ID": ID,
                 "OriginalIndex": i,
                 "New": True
@@ -942,7 +945,7 @@ class MainWindow(QMainWindow):
             "Game Asset File (*)"
         )
 
-        if not wanted_file:
+        if not wanted_files:
             return
             
         filepaths = []
@@ -956,25 +959,33 @@ class MainWindow(QMainWindow):
                 
         offset = 0
         filepaths_redirect = []
+
         for filepath in filepaths:
             print("FILE:", filepath)
+
             size = os.path.getsize(filepath)
+            basename = os.path.basename(filepath)
 
-            if "_redirect" in os.path.basename(filepath):
-                filepaths_redirect.append( {"redirect_filepath": filepath, "redirect_offset": offset, "redirect_size": size} )
-
-                break
+            if "_redirect" in basename:
+                for wanted_file in wanted_files:
+                    if os.path.basename(wanted_file) == basename:
+                        filepaths_redirect.append({
+                            "redirect_filepath": filepath,
+                            "redirect_offset": offset,
+                            "redirect_size": size
+                        })
+                        break
 
             offset += size
 
-        self.RedirectAsset(mod_folder, wanted_files)
+        self.RedirectAsset(mod_folder, filepaths_redirect)
     
     def RedirectAsset(self, mod_folder, filepaths_redirect):
 
         # Ask once which archive contains the redirected assets
         dialog = RedirectAssetDialog()
 
-        if dialog.exec() == QDialog.Rejected:
+        if dialog.exec() == QDialog.rejected:
             return
             
         else:
@@ -1067,7 +1078,8 @@ class MainWindow(QMainWindow):
                 redirect_size = file_redirect["redirect_size"]
                 redirect_name = os.path.basename(file_redirect["redirect_filepath"])
                 
-                
+                if "_redirect_localization" in redirect_name:
+                    continue
                 
                 redirect_name = redirect_name.replace("_", "/").replace("//", "_").replace("\\", "/").replace("/redirect", "")
                 print(redirect_name)
@@ -1077,7 +1089,9 @@ class MainWindow(QMainWindow):
                 for r in range( self.asset_model.rowCount() ):
                     if redirect_name in self.asset_model.index(r, 2).data() or redirect_name.replace("/", "\\") in self.asset_model.index(r, 2).data():
                         wanted_asset_row = r
-
+                
+                if not wanted_asset_row:
+                    return
 
                 asset_index = self.asset_model.index(wanted_asset_row, 0).data()
                 archive_name_original = self.asset_model.index(wanted_asset_row, 3).data()
